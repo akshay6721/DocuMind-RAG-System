@@ -470,11 +470,28 @@ if submitted and user_question.strip():
             )
 
             MIN_SCORE = 0.30
-            good_chunks = [
-                chunk for chunk, score, _ in ranked_multi if score >= MIN_SCORE
+
+            # Group scores by document
+            doc_scores = {}
+            for chunk, score, doc in ranked_multi:
+                doc_scores.setdefault(doc, []).append(score)
+
+            # Decide which docs actually mention the topic
+            mentioned_docs = [
+                doc for doc, scores in doc_scores.items()
+                if max(scores) >= MIN_SCORE
             ]
 
-            used_docs = list({doc for _, _, doc in ranked_multi})
+            not_mentioned_docs = [
+                doc for doc in doc_scores.keys()
+                if doc not in mentioned_docs
+            ]
+
+            # Use only chunks from relevant documents
+            good_chunks = [
+                chunk for chunk, score, doc in ranked_multi
+                if doc in mentioned_docs and score >= MIN_SCORE
+            ]
 
         else:
             docs = vector_store.max_marginal_relevance_search(
@@ -577,13 +594,23 @@ if submitted and user_question.strip():
             # MULTI‑DOCUMENT FORMATTING
             # ==========================
             if multi_doc_mode:
-                sources_text = "\n".join(
-                    [f"• {doc}" for doc in used_docs]
-                )
+                if mentioned_docs:
+                    sources_text = "✅ **Mentioned in:**\n" + "\n".join(
+                        [f"• {doc}" for doc in mentioned_docs]
+                    )
+                else:
+                    sources_text = "⚠️ **No document explicitly mentions this topic.**"
+
+                if not_mentioned_docs:
+                    sources_text += "\n\n❌ **Not mentioned in:**\n" + "\n".join(
+                        [f"• {doc}" for doc in not_mentioned_docs]
+                    )
 
                 used_scores = [
-                    score for chunk, score, _ in ranked_multi if chunk in good_chunks
+                    score for _, score, doc in ranked_multi
+                    if doc in mentioned_docs
                 ]
+
 
             # ==========================
             # SINGLE‑DOCUMENT FORMATTING
